@@ -1,13 +1,14 @@
 # nbaide
 
-Dual-rendering for Jupyter notebook outputs — rich visuals for humans, structured data for AI agents.
+The agent-readability standard for Jupyter notebooks. Ruff makes your code clean — nbaide makes your notebooks intelligent.
 
 ## What This Project Is
 
-A Python library that uses Jupyter's existing multi-MIME-type display system (`_repr_mimebundle_()`) to provide two representations of every notebook output:
+A Python toolkit that makes Jupyter notebook outputs understandable by AI coding agents. Three layers:
 
-- **For humans:** Rich HTML tables, charts, styled visuals (rendered in JupyterLab as usual)
-- **For agents:** Structured JSON with schemas, statistics, data samples, and semantic metadata (stored in the `.ipynb` file, readable by Claude Code, Cursor, Codex, etc.)
+1. **Formatters** — embed structured JSON (schema, stats, trends) in notebook outputs so agents can read them. Humans see exactly what they've always seen.
+2. **CLI** — `nbaide manifest` and `nbaide read` give agents structured access to any notebook without a running kernel.
+3. **Linter** (planned) — `nbaide lint` scores notebooks for agent readability and flags agent-hostile patterns (oversized outputs, untitled charts, base64 bloat).
 
 The key insight: Jupyter's frontend always renders HTML when available, but `text/plain` is what agents see when reading `.ipynb` files. We embed structured JSON in `text/plain` (before the pandas repr) so agents get it through the channel they already consume — no special tooling needed. We also store it in a custom `application/vnd.nbaide+json` MIME type for future tooling.
 
@@ -69,25 +70,33 @@ Cover the data science stack. Each new type gets agent visibility for free throu
 - Types without native HTML/image output (numpy, custom types) need a generated `text/html` from `repr()` so Jupyter doesn't show the raw nbaide JSON to humans. Acceptable trade-off — visually identical.
 - 217 tests total.
 
-### Phase 3 — Notebook-level intelligence (IN PROGRESS)
-Move from cell-level to notebook-level understanding.
-- **Notebook manifest** (COMPLETE) — `nbaide.manifest(path)` and `nbaide manifest path` CLI parse a .ipynb file and return structured summary: cell counts, execution state, imports, markdown outline, data artifact inventory (DataFrames with shapes/columns, figures with plot types/titles, arrays with shapes/dtypes). Works on any notebook; richer when nbaide outputs present.
-- **Cell intent annotations** — `%%intent exploration` magic, stored in cell metadata
-- **Variable dependency graph** — which cells produced which variables, what's stale
-- **Auto-profiling mode** — IPython extension that wraps all display calls automatically
-- **Dynamic manifest** — live kernel inspection for variable state, stale cells (deferred)
+### Phase 3 — CLI and notebook intelligence (COMPLETE)
+Agent access to notebook data without a running kernel.
+- **Notebook manifest** (COMPLETE) — `nbaide manifest path` returns structured summary: cell counts, execution state, imports, markdown outline, data artifact inventory
+- **CLI read** (COMPLETE) — `nbaide read path --cell N --type TYPE` extracts full structured data from any cell's outputs
+- Works on any notebook; richer when nbaide outputs present. Falls back to MIME type heuristics for non-nbaide notebooks.
 
-### Phase 4 — Agent integration layer (deprioritized)
-The text/plain approach covers most cases without agent-side setup. 8+ Jupyter MCP servers already exist (Datalayer, cursor-notebook-mcp, etc.) — nbaide's value is orthogonal (content understanding, not notebook structure). Focus on compatibility with existing MCP servers rather than building our own.
-- **MCP server compatibility testing** — validate nbaide outputs are accessible through top MCP servers
-- **CLI `read` command** — `nbaide read notebook.ipynb` extracts all structured data from outputs
+### Phase 4 — Linter (next)
+The "ruff for AI" layer. Score and fix notebooks for agent readability.
+- `nbaide lint notebook.ipynb` — rule-based analysis of agent-readability
+- **Scoring:** 0-100 agent readability score per notebook
+- **Rules:** oversized outputs (base64 bloat, giant HTML tables), untitled charts, missing structured metadata (no `install()` call), no markdown headings, wide DataFrames exceeding agent tooling limits, excessive output count
+- `nbaide lint --fix` — auto-remediation where possible (inject `install()`, flag fixable issues)
+- `nbaide lint --check` — non-zero exit for CI integration (fail if score below threshold)
+- Pre-commit hook support
+
+### Phase 5 — CI/CD and ecosystem
+Make agent readability a standard part of the notebook workflow.
+- **GitHub Action** — `uses: igerber/nbaide-lint@v1` for workflow integration
+- **Badge** — "Agent Readability: 92/100" for repo READMEs
+- **MCP server compatibility** — validate nbaide outputs are accessible through existing Jupyter MCP servers (Datalayer, cursor-notebook-mcp). 8+ exist; our value is orthogonal (content understanding, not notebook structure).
 - **Integration guides** for each major agent + MCP server combination
 
-### Phase 5 — Ecosystem and standardization
-- **JupyterLab extension** — "agent view" panel
+### Phase 6 — Standardization
 - **Align with JEP #129** — contribute learnings, offer as reference implementation
 - **Community formatter registry** — `nbaide-polars`, `nbaide-torch`, etc.
-- **Notebook linting** — flag agent-hostile outputs
+- **Custom lint rule plugins** — let teams define their own agent-readability rules
+- **Dynamic manifest** — live kernel inspection for variable state, stale cells
 
 ## Technical Design Notes
 
