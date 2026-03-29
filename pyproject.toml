@@ -43,6 +43,9 @@ all = [
     "scikit-learn>=1.0",
 ]
 
+[project.scripts]
+nbaide = "nbaide._cli:main"
+
 [project.urls]
 Homepage = "https://github.com/igerber/nbaide"
 Repository = "https://github.com/igerber/nbaide"
