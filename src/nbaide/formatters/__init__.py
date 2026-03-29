@@ -139,7 +139,12 @@ from nbaide.formatters._numpy import (  # noqa: E402
 
 
 def _numpy_mimebundle(arr: np.ndarray, **kwargs) -> dict:
-    return {MIME_TYPE: format_ndarray(arr)}
+    import html
+
+    return {
+        MIME_TYPE: format_ndarray(arr),
+        "text/html": f"<pre>{html.escape(repr(arr))}</pre>",
+    }
 
 
 def _numpy_text_plain(arr: np.ndarray, p, cycle) -> None:
@@ -147,8 +152,11 @@ def _numpy_text_plain(arr: np.ndarray, p, cycle) -> None:
 
 
 def _numpy_display(arr: np.ndarray) -> dict:
+    import html
+
     return {
         MIME_TYPE: format_ndarray(arr),
+        "text/html": f"<pre>{html.escape(repr(arr))}</pre>",
         "text/plain": render_ndarray_text_plain(arr),
     }
 
