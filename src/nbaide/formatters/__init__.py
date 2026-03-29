@@ -210,3 +210,45 @@ try:
     )
 except ImportError:
     pass
+
+# --- Register plotly (optional dependency) ---
+
+try:
+    import plotly.graph_objects  # noqa: E402
+
+    from nbaide.formatters._plotly import (
+        format_plotly_figure,
+        render_plotly_text_plain,
+    )
+
+    def _plotly_mimebundle(fig, **kwargs) -> dict:
+        result = {MIME_TYPE: format_plotly_figure(fig)}
+        # Preserve plotly's native interactive chart output
+        native = fig._repr_mimebundle_(**kwargs) if hasattr(fig, "_repr_mimebundle_") else {}
+        if native:
+            result.update(native)
+        return result
+
+    def _plotly_text_plain(fig, p, cycle) -> None:
+        p.text(render_plotly_text_plain(fig))
+
+    def _plotly_display(fig) -> dict:
+        result = {
+            MIME_TYPE: format_plotly_figure(fig),
+            "text/plain": render_plotly_text_plain(fig),
+        }
+        # Include plotly's native HTML for interactive display
+        if hasattr(fig, "to_html"):
+            result["text/html"] = fig.to_html(include_plotlyjs="cdn", full_html=False)
+        return result
+
+    register(
+        FormatterEntry(
+            target_type=plotly.graph_objects.Figure,
+            mimebundle_func=_plotly_mimebundle,
+            text_plain_func=_plotly_text_plain,
+            display_func=_plotly_display,
+        )
+    )
+except ImportError:
+    pass

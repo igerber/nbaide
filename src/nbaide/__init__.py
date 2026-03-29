@@ -9,9 +9,13 @@ from nbaide.formatters import register_type as register
 from nbaide.formatters._numpy import format_ndarray  # noqa: F401
 from nbaide.formatters._pandas import format_dataframe, render_text_plain
 
-# Import matplotlib formatter if available
+# Import optional formatters if available
 try:
     from nbaide.formatters._matplotlib import format_figure  # noqa: F401
+except ImportError:
+    pass
+try:
+    from nbaide.formatters._plotly import format_plotly_figure  # noqa: F401
 except ImportError:
     pass
 

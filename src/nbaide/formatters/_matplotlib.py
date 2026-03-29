@@ -10,12 +10,9 @@ import json
 
 import numpy as np
 
-from nbaide._safe_json import round_stat, safe_json_value
+from nbaide._safe_json import adaptive_xy_data, compute_trend, round_stat, safe_json_value
 
 MAX_AXES = 6
-MAX_SAMPLE_POINTS = 20
-SMALL_DATA_THRESHOLD = 100
-MEDIUM_DATA_THRESHOLD = 1000
 
 SMALL_HEATMAP = 10
 MEDIUM_HEATMAP = 50
@@ -144,9 +141,9 @@ def _extract_line(line) -> dict | None:
     if label and not label.startswith("_"):
         result["label"] = label
 
-    result.update(_adaptive_xy_data(x, y))
+    result.update(adaptive_xy_data(x, y))
 
-    trend = _compute_trend(x, y)
+    trend = compute_trend(x, y)
     if trend:
         result["trend"] = trend
 
@@ -172,9 +169,9 @@ def _extract_scatter(coll) -> dict | None:
     if label and not label.startswith("_"):
         result["label"] = label
 
-    result.update(_adaptive_xy_data(x, y))
+    result.update(adaptive_xy_data(x, y))
 
-    trend = _compute_trend(x, y)
+    trend = compute_trend(x, y)
     if trend:
         result["trend"] = trend
 
@@ -324,76 +321,4 @@ def _array_stats(arr: np.ndarray) -> dict:
     }
 
 
-# ---------------------------------------------------------------------------
-# Adaptive data sampling (for x/y series)
-# ---------------------------------------------------------------------------
 
-
-def _adaptive_xy_data(x: np.ndarray, y: np.ndarray) -> dict:
-    """Adaptively include x/y data based on point count."""
-    n = len(x)
-    result: dict = {"data_points": n}
-
-    if n <= SMALL_DATA_THRESHOLD:
-        result["data"] = {
-            "x": [safe_json_value(v) for v in x],
-            "y": [safe_json_value(v) for v in y],
-        }
-    elif n <= MEDIUM_DATA_THRESHOLD:
-        indices = np.linspace(0, n - 1, MAX_SAMPLE_POINTS, dtype=int)
-        result["sample_data"] = {
-            "x": [safe_json_value(v) for v in x[indices]],
-            "y": [safe_json_value(v) for v in y[indices]],
-        }
-    else:
-        mask = np.isfinite(x) & np.isfinite(y)
-        x_clean, y_clean = x[mask], y[mask]
-        if len(x_clean) > 0:
-            result["stats"] = {
-                "x_min": round_stat(float(np.min(x_clean))),
-                "x_max": round_stat(float(np.max(x_clean))),
-                "y_min": round_stat(float(np.min(y_clean))),
-                "y_max": round_stat(float(np.max(y_clean))),
-                "y_mean": round_stat(float(np.mean(y_clean))),
-                "y_std": round_stat(float(np.std(y_clean))),
-            }
-
-    return result
-
-
-# ---------------------------------------------------------------------------
-# Trend detection
-# ---------------------------------------------------------------------------
-
-
-def _compute_trend(x: np.ndarray, y: np.ndarray) -> dict | None:
-    """Compute linear regression trend for an x/y series."""
-    mask = np.isfinite(x) & np.isfinite(y)
-    x_clean, y_clean = x[mask], y[mask]
-
-    if len(x_clean) < 3:
-        return None
-
-    try:
-        slope, intercept = np.polyfit(x_clean, y_clean, 1)
-    except (np.linalg.LinAlgError, ValueError):
-        return None
-
-    # R-squared
-    y_pred = slope * x_clean + intercept
-    ss_res = np.sum((y_clean - y_pred) ** 2)
-    ss_tot = np.sum((y_clean - np.mean(y_clean)) ** 2)
-    r_squared = float(1 - (ss_res / ss_tot)) if ss_tot > 0 else 0.0
-
-    if r_squared < 0.1:
-        direction = "stable"
-    elif slope > 0:
-        direction = "increasing"
-    else:
-        direction = "decreasing"
-
-    return {
-        "direction": direction,
-        "slope": round_stat(float(slope)),
-        "r_squared": round(r_squared, 2),
-    }

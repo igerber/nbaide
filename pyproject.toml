@@ -33,6 +33,7 @@ dev = [
     "pytest-cov",
     "ruff",
     "matplotlib>=3.5",
+    "plotly>=5.0",
 ]
 matplotlib = ["matplotlib>=3.5"]
 plotly = ["plotly>=5.0"]
