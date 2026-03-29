@@ -54,31 +54,31 @@ The "pip install and it works" moment.
 - JSON-first ordering in text/plain ensures structured data survives when agent tooling truncates large outputs.
 - For very wide DataFrames (>40 cols), the HTML table alone can exceed agent tooling limits. An MCP server would solve this completely but isn't needed for typical DataFrames.
 
-### Phase 2 — Expand data types (IN PROGRESS)
+### Phase 2 — Expand data types (COMPLETE)
 Cover the data science stack. Each new type gets agent visibility for free through the same text/plain channel.
 - **matplotlib** figures (COMPLETE) — chart type detection (line, scatter, bar, histogram, heatmap), axis labels, data ranges, adaptive data sampling (3 tiers), trend detection (direction + slope + R²)
-- **plotly** figures — extract the structured spec
-- **numpy** arrays — shape, dtype, stats, sample slices
-- **scikit-learn** models — model type, params, metrics, feature importances
-- **PIL/images** — dimensions, mode, histogram summary
-- Plugin system so users can register formatters for their own types
+- **numpy** arrays (COMPLETE) — shape, dtype, global stats, per-column stats for 2D, adaptive data sampling
+- **Plugin system** (COMPLETE) — `nbaide.register(MyType, format_func)` for custom types. Late registration works (after `install()`). Default text/plain is JSON-only. HTML fallback from `repr()` for types without native HTML.
+- **plotly** figures — extract the structured spec (deferred — lower priority, plotly already stores JSON internally)
 - Formatters package and registry system (COMPLETE) — new types register via `FormatterEntry` in `formatters/__init__.py`
 
 **Key learnings:**
 - matplotlib's inline backend calls `select_figure_formats()` which blanket-pops all Figure formatters. Fixed by wrapping that function to re-register ours, plus a `pre_execute` hook as safety net.
-- 118 tests total (75 pandas + 42 matplotlib + 1 inline backend survival).
+- Types without native HTML/image output (numpy, custom types) need a generated `text/html` from `repr()` so Jupyter doesn't show the raw nbaide JSON to humans. Acceptable trade-off — visually identical.
+- 172 tests total.
 
-### Phase 3 — Notebook-level intelligence
+### Phase 3 — Notebook-level intelligence (IN PROGRESS)
 Move from cell-level to notebook-level understanding.
-- **Notebook manifest** — one call gives the agent a structured summary of the entire notebook
+- **Notebook manifest** (COMPLETE) — `nbaide.manifest(path)` and `nbaide manifest path` CLI parse a .ipynb file and return structured summary: cell counts, execution state, imports, markdown outline, data artifact inventory (DataFrames with shapes/columns, figures with plot types/titles, arrays with shapes/dtypes). Works on any notebook; richer when nbaide outputs present.
 - **Cell intent annotations** — `%%intent exploration` magic, stored in cell metadata
 - **Variable dependency graph** — which cells produced which variables, what's stale
 - **Auto-profiling mode** — IPython extension that wraps all display calls automatically
+- **Dynamic manifest** — live kernel inspection for variable state, stale cells (deferred)
 
 ### Phase 4 — Agent integration layer (deprioritized)
 The text/plain approach covers most cases without agent-side setup. This phase adds richer integration for edge cases and power users.
 - **MCP server** — expose notebook state as MCP tools (solves the wide-DataFrame truncation problem completely)
-- **CLI tool** — `nbaide read notebook.ipynb` extracts all structured data
+- **CLI `read` command** — `nbaide read notebook.ipynb` extracts all structured data from outputs
 - Integration guides for each major agent
 
 ### Phase 5 — Ecosystem and standardization
@@ -138,15 +138,21 @@ nbaide/
 │   ├── __init__.py              # Public API: install(), show(), format_dataframe(), format_figure()
 │   ├── _install.py              # Registry-driven IPython formatter registration
 │   ├── _safe_json.py            # Shared: safe_json_value(), round_stat()
+│   ├── _manifest.py             # Static .ipynb parser (manifest function)
+│   ├── _cli.py                  # CLI entry point (nbaide manifest ...)
 │   ├── _pandas.py               # Backward-compat shim (re-exports from formatters._pandas)
 │   └── formatters/
-│       ├── __init__.py          # Registry: FormatterEntry, register(), get_entry_for_type()
+│       ├── __init__.py          # Registry: FormatterEntry, register(), register_type(), get_entry_for_type()
 │       ├── _pandas.py           # DataFrame formatter (format_dataframe, render_text_plain)
-│       └── _matplotlib.py       # Figure formatter (format_figure, render_figure_text_plain)
+│       ├── _matplotlib.py       # Figure formatter (format_figure, render_figure_text_plain)
+│       └── _numpy.py            # ndarray formatter (format_ndarray, render_ndarray_text_plain)
 ├── tests/
-│   ├── test_pandas.py           # DataFrame formatting tests (75 tests)
-│   ├── test_matplotlib.py       # Figure formatting tests (42 tests)
-│   └── test_install.py          # IPython integration tests (14 tests + inline backend survival)
+│   ├── test_pandas.py           # DataFrame formatting tests
+│   ├── test_matplotlib.py       # Figure formatting tests
+│   ├── test_numpy.py            # ndarray formatting tests
+│   ├── test_install.py          # IPython integration tests
+│   ├── test_register.py         # Plugin registration tests
+│   └── test_manifest.py         # Manifest parser + CLI tests
 ├── pyproject.toml
 ├── README.md
 └── CLAUDE.md
