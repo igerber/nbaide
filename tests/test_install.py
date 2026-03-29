@@ -4,11 +4,15 @@ from __future__ import annotations
 
 from unittest.mock import patch
 
+import matplotlib
+import matplotlib.figure
 import pandas as pd
 import pytest
 from IPython.core.interactiveshell import InteractiveShell
 
-from nbaide._pandas import MIME_TYPE
+matplotlib.use("Agg")
+
+from nbaide.formatters import MIME_TYPE  # noqa: E402
 
 # Create a shared shell instance for all tests
 _shell = InteractiveShell.instance()
@@ -26,12 +30,15 @@ class TestInstall:
 
         # Clean up any previous registration
         if mod._installed:
-            _shell.display_formatter.mimebundle_formatter.pop(pd.DataFrame, None)
-            _shell.display_formatter.formatters["text/plain"].pop(pd.DataFrame, None)
+            mb = _shell.display_formatter.mimebundle_formatter
+            tp = _shell.display_formatter.formatters["text/plain"]
+            mb.pop(pd.DataFrame, None)
+            tp.pop(pd.DataFrame, None)
+            mb.pop(matplotlib.figure.Figure, None)
+            tp.pop(matplotlib.figure.Figure, None)
 
         mod._installed = False
-        mod._original_mimebundle = None
-        mod._original_text_plain = None
+        mod._originals.clear()
 
     def test_install_registers_formatter(self):
         with patch("IPython.get_ipython", return_value=_shell):
@@ -154,3 +161,50 @@ class TestInstall:
             df = pd.DataFrame({"a": [1]})
             format_dict, _ = _shell.display_formatter.format(df)
             assert "---nbaide---" not in format_dict.get("text/plain", "")
+
+    # --- matplotlib Figure tests ---
+
+    def test_install_registers_figure_formatter(self):
+        import matplotlib.pyplot as plt
+
+        with patch("IPython.get_ipython", return_value=_shell):
+            from nbaide._install import install
+
+            install()
+
+            fig, ax = plt.subplots()
+            ax.plot([1, 2], [1, 2])
+            format_dict, _ = _shell.display_formatter.format(fig)
+            assert MIME_TYPE in format_dict
+            plt.close(fig)
+
+    def test_figure_text_plain_has_json(self):
+        import matplotlib.pyplot as plt
+
+        with patch("IPython.get_ipython", return_value=_shell):
+            from nbaide._install import install
+
+            install()
+
+            fig, ax = plt.subplots()
+            ax.plot([1, 2], [1, 2])
+            format_dict, _ = _shell.display_formatter.format(fig)
+            text = format_dict["text/plain"]
+            assert "---nbaide---" in text
+            assert '"type": "figure"' in text
+            plt.close(fig)
+
+    def test_uninstall_removes_figure_formatter(self):
+        import matplotlib.pyplot as plt
+
+        with patch("IPython.get_ipython", return_value=_shell):
+            from nbaide._install import install, uninstall
+
+            install()
+            uninstall()
+
+            fig, ax = plt.subplots()
+            ax.plot([1, 2], [1, 2])
+            format_dict, _ = _shell.display_formatter.format(fig)
+            assert MIME_TYPE not in format_dict
+            plt.close(fig)

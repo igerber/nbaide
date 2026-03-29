@@ -3,25 +3,31 @@
 __version__ = "0.1.0"
 
 from nbaide._install import install, uninstall
-from nbaide._pandas import MIME_TYPE, format_dataframe, render_text_plain
+from nbaide.formatters import MIME_TYPE, get_entry_for_type
+from nbaide.formatters._pandas import format_dataframe, render_text_plain
+
+# Import matplotlib formatter if available
+try:
+    from nbaide.formatters._matplotlib import format_figure  # noqa: F401
+except ImportError:
+    pass
 
 
-def show(df) -> None:
-    """Explicitly dual-render a DataFrame.
+def show(obj) -> None:
+    """Explicitly dual-render an object (DataFrame, matplotlib Figure, etc.).
 
-    Displays both rich HTML (for humans) and structured JSON (for AI agents).
+    Displays both rich visuals (for humans) and structured JSON (for AI agents).
     Works with or without ``install()`` having been called.
     """
     from IPython.display import display
 
-    display(
-        {
-            MIME_TYPE: format_dataframe(df),
-            "text/html": df._repr_html_(),
-            "text/plain": render_text_plain(df),
-        },
-        raw=True,
-    )
+    entry = get_entry_for_type(obj)
+    if entry is None:
+        raise TypeError(
+            f"nbaide does not have a formatter for {type(obj).__name__}. "
+            "Supported types: pandas DataFrame, matplotlib Figure."
+        )
+    display(entry.display_func(obj), raw=True)
 
 
 __all__ = [
