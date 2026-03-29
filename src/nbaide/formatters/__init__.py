@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import dataclasses
+import json
 from typing import Any, Callable
 
 from nbaide.formatters._pandas import MIME_TYPE  # noqa: F401 — re-export
@@ -21,8 +22,51 @@ class FormatterEntry:
 
 
 def register(entry: FormatterEntry) -> None:
-    """Register a formatter entry."""
+    """Register a formatter entry (internal). Overwrites existing entry for same type."""
+    global _registry
+    _registry = [e for e in _registry if e.target_type is not entry.target_type]
     _registry.append(entry)
+
+
+def register_type(target_type, format_func, text_plain_func=None):
+    """Public API: register a custom formatter for a type.
+
+    Args:
+        target_type: The class to format (e.g., ``polars.DataFrame``).
+        format_func: ``(obj) -> dict`` — returns a JSON-serializable dict with
+            structured metadata. Should include a ``"type"`` field.
+        text_plain_func: ``(obj) -> str`` — optional custom text/plain renderer.
+            If omitted, generates ``---nbaide---`` followed by compact JSON.
+    """
+    if text_plain_func is None:
+        _fmt = format_func  # capture for closure
+
+        def text_plain_func(obj):
+            return "---nbaide---\n" + json.dumps(_fmt(obj))
+
+    _tp_func = text_plain_func  # capture for closures below
+
+    def mimebundle(obj, **kwargs):
+        return {MIME_TYPE: format_func(obj)}
+
+    def text_plain_ipython(obj, p, cycle):
+        p.text(_tp_func(obj))
+
+    def display(obj):
+        return {MIME_TYPE: format_func(obj), "text/plain": _tp_func(obj)}
+
+    entry = FormatterEntry(
+        target_type=target_type,
+        mimebundle_func=mimebundle,
+        text_plain_func=text_plain_ipython,
+        display_func=display,
+    )
+    register(entry)
+
+    # Late registration: if install() was already called, add to IPython now
+    from nbaide._install import late_install_entry
+
+    late_install_entry(entry)
 
 
 def get_entries() -> list[FormatterEntry]:

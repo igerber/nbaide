@@ -4,6 +4,7 @@ __version__ = "0.1.0"
 
 from nbaide._install import install, uninstall
 from nbaide.formatters import MIME_TYPE, get_entry_for_type
+from nbaide.formatters import register_type as register
 from nbaide.formatters._numpy import format_ndarray  # noqa: F401
 from nbaide.formatters._pandas import format_dataframe, render_text_plain
 
@@ -26,7 +27,8 @@ def show(obj) -> None:
     if entry is None:
         raise TypeError(
             f"nbaide does not have a formatter for {type(obj).__name__}. "
-            "Supported types: pandas DataFrame, numpy ndarray, matplotlib Figure."
+            "Supported types: pandas DataFrame, numpy ndarray, matplotlib Figure, "
+            "or any type registered via nbaide.register()."
         )
     display(entry.display_func(obj), raw=True)
 
@@ -34,6 +36,7 @@ def show(obj) -> None:
 __all__ = [
     "install",
     "uninstall",
+    "register",
     "show",
     "format_dataframe",
     "render_text_plain",

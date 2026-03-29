@@ -146,6 +146,29 @@ def _ensure_formatters() -> None:
             return
 
 
+def late_install_entry(entry) -> None:
+    """Register a single formatter entry with IPython (for late registration).
+
+    Called by register_type() when install() was already called, so the new
+    type is immediately available without requiring uninstall/reinstall.
+    """
+    if not _installed:
+        return
+
+    from IPython import get_ipython
+
+    ip = get_ipython()
+    if ip is None:
+        return
+
+    mimebundle_fmt = ip.display_formatter.mimebundle_formatter
+    text_plain_fmt = ip.display_formatter.formatters["text/plain"]
+    orig_mb = mimebundle_fmt.for_type(entry.target_type, entry.mimebundle_func)
+    orig_tp = text_plain_fmt.for_type(entry.target_type, entry.text_plain_func)
+    if entry.target_type not in _originals:
+        _originals[entry.target_type] = (orig_mb, orig_tp)
+
+
 def _get_ipython_or_raise():
     """Get the active IPython shell or raise a clear error."""
     from IPython import get_ipython
