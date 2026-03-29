@@ -54,15 +54,19 @@ The "pip install and it works" moment.
 - JSON-first ordering in text/plain ensures structured data survives when agent tooling truncates large outputs.
 - For very wide DataFrames (>40 cols), the HTML table alone can exceed agent tooling limits. An MCP server would solve this completely but isn't needed for typical DataFrames.
 
-### Phase 2 — Expand data types (next)
+### Phase 2 — Expand data types (IN PROGRESS)
 Cover the data science stack. Each new type gets agent visibility for free through the same text/plain channel.
-- **matplotlib** figures — semantic metadata (axis labels, data ranges, chart type, trend direction)
+- **matplotlib** figures (COMPLETE) — chart type detection (line, scatter, bar, histogram, heatmap), axis labels, data ranges, adaptive data sampling (3 tiers), trend detection (direction + slope + R²)
 - **plotly** figures — extract the structured spec
 - **numpy** arrays — shape, dtype, stats, sample slices
 - **scikit-learn** models — model type, params, metrics, feature importances
 - **PIL/images** — dimensions, mode, histogram summary
 - Plugin system so users can register formatters for their own types
-- Introduce `formatters/` package and registry when adding the second type
+- Formatters package and registry system (COMPLETE) — new types register via `FormatterEntry` in `formatters/__init__.py`
+
+**Key learnings:**
+- matplotlib's inline backend calls `select_figure_formats()` which blanket-pops all Figure formatters. Fixed by wrapping that function to re-register ours, plus a `pre_execute` hook as safety net.
+- 118 tests total (75 pandas + 42 matplotlib + 1 inline backend survival).
 
 ### Phase 3 — Notebook-level intelligence
 Move from cell-level to notebook-level understanding.
@@ -131,18 +135,22 @@ Optional fields: `columns_truncated_from` (only if >40 cols), `index` (only if n
 ```
 nbaide/
 ├── src/nbaide/
-│   ├── __init__.py          # Public API: install(), uninstall(), show(), format_dataframe()
-│   ├── _pandas.py           # DataFrame formatting logic (no IPython dependency)
-│   └── _install.py          # IPython formatter registration
+│   ├── __init__.py              # Public API: install(), show(), format_dataframe(), format_figure()
+│   ├── _install.py              # Registry-driven IPython formatter registration
+│   ├── _safe_json.py            # Shared: safe_json_value(), round_stat()
+│   ├── _pandas.py               # Backward-compat shim (re-exports from formatters._pandas)
+│   └── formatters/
+│       ├── __init__.py          # Registry: FormatterEntry, register(), get_entry_for_type()
+│       ├── _pandas.py           # DataFrame formatter (format_dataframe, render_text_plain)
+│       └── _matplotlib.py       # Figure formatter (format_figure, render_figure_text_plain)
 ├── tests/
-│   ├── test_pandas.py       # Core formatting tests (57 tests)
-│   └── test_install.py      # IPython integration tests (11 tests)
+│   ├── test_pandas.py           # DataFrame formatting tests (75 tests)
+│   ├── test_matplotlib.py       # Figure formatting tests (42 tests)
+│   └── test_install.py          # IPython integration tests (14 tests + inline backend survival)
 ├── pyproject.toml
 ├── README.md
 └── CLAUDE.md
 ```
-
-When Phase 2 adds more types, introduce a `formatters/` package and registry.
 
 ## Development
 
