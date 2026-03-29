@@ -54,7 +54,7 @@ class LintResult:
     issues: list[LintIssue] = field(default_factory=list)
     score: int = 100
     rating: str = "Excellent"
-    fixed: list[str] = field(default_factory=list)
+    fixed: list[tuple[str, int | None]] = field(default_factory=list)
 
     def to_dict(self) -> dict:
         return {
@@ -62,7 +62,7 @@ class LintResult:
             "issues": [asdict(i) for i in self.issues],
             "score": self.score,
             "rating": self.rating,
-            "fixed": self.fixed,
+            "fixed": [{"rule": r, "cell": c} for r, c in self.fixed],
         }
 
 
@@ -85,6 +85,9 @@ def lint(path: str | Path, fix: bool = False) -> LintResult:
 
     # Run all checks
     issues.extend(_check_output_sizes(cells))
+    issues.extend(_check_error_outputs(cells))
+    issues.extend(_check_stream_noise(cells))
+    issues.extend(_check_redundant_images(cells))
     issues.extend(_check_data_structures(cells))
     issues.extend(_check_visualizations(cells))
     issues.extend(_check_notebook_structure(cells))
@@ -93,8 +96,9 @@ def lint(path: str | Path, fix: bool = False) -> LintResult:
     fixed = []
     if fix:
         fixed = _apply_fixes(path, nb, issues)
-        # Remove fixed issues
-        issues = [i for i in issues if i.rule not in fixed]
+        # Remove fixed issues (match on rule+cell)
+        fixed_set = {(r, c) for r, c in fixed}
+        issues = [i for i in issues if (i.rule, i.cell) not in fixed_set]
 
     # Compute score
     score, rating = _compute_score(issues)
@@ -119,20 +123,7 @@ def _check_output_sizes(cells: list) -> list[LintIssue]:
     for i, cell in enumerate(cells):
         if cell.get("cell_type") != "code":
             continue
-        total_size = 0
-        for output in cell.get("outputs", []):
-            data = output.get("data", {})
-            for mime_type, content in data.items():
-                if isinstance(content, str):
-                    total_size += len(content)
-                elif isinstance(content, list):
-                    total_size += sum(len(s) for s in content if isinstance(s, str))
-            # Also count stream output
-            text = output.get("text", "")
-            if isinstance(text, list):
-                total_size += sum(len(s) for s in text)
-            elif isinstance(text, str):
-                total_size += len(text)
+        total_size = _cell_output_size(cell)
 
         if total_size > OUTPUT_SIZE_ERROR:
             issues.append(
@@ -140,11 +131,9 @@ def _check_output_sizes(cells: list) -> list[LintIssue]:
                     rule="AIR001",
                     cell=i,
                     severity="error",
-                    message=f"Output size {total_size // 1024}KB exceeds 256KB limit",
-                    suggestion=(
-                        "Consider reducing output size — large outputs"
-                        " exceed agent context limits"
-                    ),
+                    message=f"Output size {total_size // 1024}KB exceeds 256KB",
+                    fixable=True,
+                    suggestion="Will summarize: keep nbaide metadata, strip bloat",
                 )
             )
         elif total_size > OUTPUT_SIZE_WARNING:
@@ -153,14 +142,111 @@ def _check_output_sizes(cells: list) -> list[LintIssue]:
                     rule="AIR002",
                     cell=i,
                     severity="warning",
-                    message=f"Output size {total_size // 1024}KB exceeds 100KB threshold",
-                    suggestion=(
-                        "Consider reducing output size — large outputs"
-                        " consume agent token budget"
-                    ),
+                    message=f"Output size {total_size // 1024}KB exceeds 100KB",
+                    fixable=True,
+                    suggestion="Will summarize: keep nbaide metadata, strip bloat",
                 )
             )
     return issues
+
+
+def _check_error_outputs(cells: list) -> list[LintIssue]:
+    """AIR003: Flag cells with error/traceback outputs."""
+    issues = []
+    for i, cell in enumerate(cells):
+        if cell.get("cell_type") != "code":
+            continue
+        for output in cell.get("outputs", []):
+            if output.get("output_type") == "error":
+                ename = output.get("ename", "Error")
+                issues.append(
+                    LintIssue(
+                        rule="AIR003",
+                        cell=i,
+                        severity="warning",
+                        message=f"Error output: {ename}",
+                        fixable=True,
+                        suggestion="Will strip error traceback",
+                    )
+                )
+                break
+    return issues
+
+
+def _check_stream_noise(cells: list) -> list[LintIssue]:
+    """AIR004: Flag cells with excessive stream (stdout/stderr) output."""
+    issues = []
+    for i, cell in enumerate(cells):
+        if cell.get("cell_type") != "code":
+            continue
+        stream_size = 0
+        for output in cell.get("outputs", []):
+            if output.get("output_type") == "stream":
+                text = output.get("text", "")
+                if isinstance(text, list):
+                    stream_size += sum(len(s) for s in text)
+                elif isinstance(text, str):
+                    stream_size += len(text)
+        if stream_size > 5000:
+            issues.append(
+                LintIssue(
+                    rule="AIR004",
+                    cell=i,
+                    severity="info",
+                    message=f"Stream output {stream_size // 1024}KB (noisy)",
+                    fixable=True,
+                    suggestion="Will strip stream output (progress bars, logging)",
+                )
+            )
+    return issues
+
+
+def _check_redundant_images(cells: list) -> list[LintIssue]:
+    """AIR005: Flag base64 images that are redundant with nbaide metadata."""
+    issues = []
+    for i, cell in enumerate(cells):
+        if cell.get("cell_type") != "code":
+            continue
+        for output in cell.get("outputs", []):
+            data = output.get("data", {})
+            has_nbaide = isinstance(data.get(MIME_TYPE), dict)
+            has_png = "image/png" in data
+            if has_nbaide and has_png:
+                png = data["image/png"]
+                png_size = len(png) if isinstance(png, str) else 0
+                if png_size > 10000:
+                    issues.append(
+                        LintIssue(
+                            rule="AIR005",
+                            cell=i,
+                            severity="info",
+                            message=(
+                                f"Redundant {png_size // 1024}KB image"
+                                " (nbaide metadata present)"
+                            ),
+                            fixable=True,
+                            suggestion="Will strip image, keep structured metadata",
+                        )
+                    )
+    return issues
+
+
+def _cell_output_size(cell: dict) -> int:
+    """Compute total output size for a cell in bytes."""
+    total = 0
+    for output in cell.get("outputs", []):
+        data = output.get("data", {})
+        for content in data.values():
+            if isinstance(content, str):
+                total += len(content)
+            elif isinstance(content, list):
+                total += sum(len(s) for s in content if isinstance(s, str))
+        text = output.get("text", "")
+        if isinstance(text, list):
+            total += sum(len(s) for s in text)
+        elif isinstance(text, str):
+            total += len(text)
+    return total
 
 
 def _check_data_structures(cells: list) -> list[LintIssue]:
@@ -320,15 +406,48 @@ def _compute_score(issues: list[LintIssue]) -> tuple[int, str]:
 # ---------------------------------------------------------------------------
 
 
-def _apply_fixes(path: Path, nb: dict, issues: list[LintIssue]) -> list[str]:
-    """Apply safe auto-fixes to the notebook. Returns list of fixed rule codes."""
-    fixed = []
+def _apply_fixes(
+    path: Path, nb: dict, issues: list[LintIssue]
+) -> list[tuple[str, int | None]]:
+    """Apply safe auto-fixes. Returns list of (rule, cell) tuples that were fixed."""
+    fixed: list[tuple[str, int | None]] = []
     cells = nb.get("cells", [])
+    fixable = [(i.rule, i.cell) for i in issues if i.fixable]
 
-    fixable_rules = {i.rule for i in issues if i.fixable}
+    # --- Cell-level fixes (process in reverse to keep indices stable) ---
+    cell_fixes = sorted(
+        [(r, c) for r, c in fixable if c is not None], key=lambda x: x[1], reverse=True
+    )
+    for rule, cell_idx in cell_fixes:
+        cell = cells[cell_idx]
 
-    # AIN003: Inject nbaide.install()
-    if "AIN003" in fixable_rules:
+        if rule in ("AIR001", "AIR002"):
+            _fix_oversized_output(cell)
+            fixed.append((rule, cell_idx))
+
+        elif rule == "AIR003":
+            cell["outputs"] = [
+                o for o in cell.get("outputs", []) if o.get("output_type") != "error"
+            ]
+            fixed.append((rule, cell_idx))
+
+        elif rule == "AIR004":
+            cell["outputs"] = [
+                o for o in cell.get("outputs", []) if o.get("output_type") != "stream"
+            ]
+            fixed.append((rule, cell_idx))
+
+        elif rule == "AIR005":
+            for output in cell.get("outputs", []):
+                data = output.get("data", {})
+                if MIME_TYPE in data and "image/png" in data:
+                    del data["image/png"]
+            fixed.append((rule, cell_idx))
+
+    # --- Notebook-level fixes ---
+    notebook_rules = {r for r, c in fixable if c is None}
+
+    if "AIN003" in notebook_rules:
         install_cell = {
             "cell_type": "code",
             "execution_count": None,
@@ -336,17 +455,15 @@ def _apply_fixes(path: Path, nb: dict, issues: list[LintIssue]) -> list[str]:
             "outputs": [],
             "source": ["import nbaide\n", "nbaide.install()"],
         }
-        # Insert before first code cell
         insert_idx = 0
         for idx, cell in enumerate(cells):
             if cell.get("cell_type") == "code":
                 insert_idx = idx
                 break
         cells.insert(insert_idx, install_cell)
-        fixed.append("AIN003")
+        fixed.append(("AIN003", None))
 
-    # AIN001: Add heading from filename
-    if "AIN001" in fixable_rules:
+    if "AIN001" in notebook_rules:
         name = path.stem.replace("_", " ").replace("-", " ").title()
         heading_cell = {
             "cell_type": "markdown",
@@ -354,9 +471,9 @@ def _apply_fixes(path: Path, nb: dict, issues: list[LintIssue]) -> list[str]:
             "source": [f"# {name}\n"],
         }
         cells.insert(0, heading_cell)
-        fixed.append("AIN001")
+        fixed.append(("AIN001", None))
 
-    # Write back if we fixed anything
+    # Write back
     if fixed:
         nb["cells"] = cells
         with open(path, "w") as f:
@@ -364,6 +481,47 @@ def _apply_fixes(path: Path, nb: dict, issues: list[LintIssue]) -> list[str]:
             f.write("\n")
 
     return fixed
+
+
+def _fix_oversized_output(cell: dict) -> None:
+    """Summarize oversized outputs: keep nbaide metadata, strip the rest."""
+    new_outputs = []
+    for output in cell.get("outputs", []):
+        data = output.get("data", {})
+        if MIME_TYPE in data:
+            # Keep only nbaide metadata and a minimal text/plain
+            new_data = {MIME_TYPE: data[MIME_TYPE]}
+            tp = data.get("text/plain")
+            if tp:
+                # Keep just the ---nbaide--- line if present
+                text = "".join(tp) if isinstance(tp, list) else tp
+                if "---nbaide---" in text:
+                    idx = text.index("---nbaide---")
+                    end = text.find("\n\n", idx)
+                    new_data["text/plain"] = text[idx : end if end > 0 else len(text)]
+            new_outputs.append(
+                {"output_type": output["output_type"], "data": new_data, "metadata": {}}
+            )
+        elif output.get("output_type") == "stream":
+            continue  # strip stream outputs from oversized cells
+        else:
+            # No nbaide data — replace with summary note
+            size = sum(
+                len(v) if isinstance(v, str) else sum(len(s) for s in v)
+                for v in data.values()
+            )
+            note = (
+                f"[nbaide: {size // 1024}KB output stripped"
+                " — add nbaide.install() for structured metadata]"
+            )
+            new_outputs.append(
+                {
+                    "output_type": "execute_result",
+                    "data": {"text/plain": note},
+                    "metadata": {},
+                }
+            )
+    cell["outputs"] = new_outputs
 
 
 # ---------------------------------------------------------------------------
@@ -377,8 +535,9 @@ def format_report(result: LintResult) -> str:
 
     if result.fixed:
         lines.append("  Fixed:")
-        for rule in result.fixed:
-            lines.append(f"    [{rule}] Auto-fixed")
+        for rule, cell_idx in result.fixed:
+            loc = f"cell {cell_idx}" if cell_idx is not None else "notebook"
+            lines.append(f"    [{rule}] {loc}: Auto-fixed")
         lines.append("")
 
     if result.issues:
