@@ -46,7 +46,7 @@ The "pip install and it works" moment.
 - IPython formatter auto-registration — `nbaide.install()` is all you need
 - Structured schema: column types, nulls, nested stats by dtype kind, sample rows, shape
 - Adaptive text/plain: JSON first (survives truncation), pandas repr included for narrow DataFrames, omitted for wide (>40 cols)
-- 75 tests covering all dtype kinds, edge cases, IPython integration
+- 75+ tests covering all dtype kinds, edge cases, IPython integration
 - **Validated:** agents reading notebooks via standard tooling (Read tool) see the structured JSON without any special setup
 
 **Key learnings:**
@@ -67,7 +67,7 @@ Cover the data science stack. Each new type gets agent visibility for free throu
 - matplotlib's inline backend calls `select_figure_formats()` which blanket-pops all Figure formatters. Fixed by wrapping that function to re-register ours, plus a `pre_execute` hook as safety net.
 - plotly uses `_repr_mimebundle_()` for interactive charts — our mimebundle handler must merge with (not replace) plotly's native output. Also, `fig.to_dict()` binary-encodes data in plotly express figures; use trace object attributes instead.
 - Types without native HTML/image output (numpy, custom types) need a generated `text/html` from `repr()` so Jupyter doesn't show the raw nbaide JSON to humans. Acceptable trade-off — visually identical.
-- 200 tests total.
+- 217 tests total.
 
 ### Phase 3 — Notebook-level intelligence (IN PROGRESS)
 Move from cell-level to notebook-level understanding.
@@ -141,7 +141,8 @@ nbaide/
 │   ├── _install.py              # Registry-driven IPython formatter registration
 │   ├── _safe_json.py            # Shared: safe_json_value(), round_stat()
 │   ├── _manifest.py             # Static .ipynb parser (manifest function)
-│   ├── _cli.py                  # CLI entry point (nbaide manifest ...)
+│   ├── _read.py                 # Extract structured data from notebook outputs
+│   ├── _cli.py                  # CLI entry point (nbaide manifest, nbaide read)
 │   ├── _pandas.py               # Backward-compat shim (re-exports from formatters._pandas)
 │   └── formatters/
 │       ├── __init__.py          # Registry: FormatterEntry, register(), register_type(), get_entry_for_type()
@@ -156,7 +157,8 @@ nbaide/
 │   ├── test_plotly.py           # plotly formatting tests
 │   ├── test_install.py          # IPython integration tests
 │   ├── test_register.py         # Plugin registration tests
-│   └── test_manifest.py         # Manifest parser + CLI tests
+│   ├── test_manifest.py         # Manifest parser + CLI tests
+│   └── test_read.py             # Read command tests
 ├── pyproject.toml
 ├── README.md
 └── CLAUDE.md

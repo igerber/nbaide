@@ -8,7 +8,7 @@ from nbaide._read import read_notebook  # noqa: F401
 from nbaide.formatters import MIME_TYPE, get_entry_for_type
 from nbaide.formatters import register_type as register
 from nbaide.formatters._numpy import format_ndarray  # noqa: F401
-from nbaide.formatters._pandas import format_dataframe, render_text_plain
+from nbaide.formatters._pandas import format_dataframe, render_text_plain  # noqa: F401
 
 # Import optional formatters if available
 try:
@@ -43,10 +43,9 @@ __all__ = [
     "install",
     "uninstall",
     "register",
-    "manifest",
     "show",
-    "format_dataframe",
-    "render_text_plain",
+    "manifest",
+    "read_notebook",
     "MIME_TYPE",
     "__version__",
 ]
