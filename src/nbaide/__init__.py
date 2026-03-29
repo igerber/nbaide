@@ -1,6 +1,6 @@
 """nbaide — Dual-rendering for Jupyter notebooks."""
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 
 from nbaide._install import install, uninstall
 from nbaide._lint import lint  # noqa: F401

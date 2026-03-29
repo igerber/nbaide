@@ -1,8 +1,12 @@
 # nbaide
 
-Structured metadata for Jupyter notebook outputs. Rich visuals for humans, structured JSON for AI agents.
+The agent-readability standard for Jupyter notebooks. Ruff makes your code clean — nbaide makes your notebooks intelligent.
 
-AI coding agents (Claude Code, Cursor, Codex) struggle with Jupyter notebooks because outputs are stored as HTML tables, base64 images, and opaque blobs. nbaide makes every output agent-readable by embedding structured JSON alongside the normal display — without changing what humans see.
+AI coding agents (Claude Code, Cursor, Codex) struggle with Jupyter notebooks because outputs are stored as HTML tables, base64 images, and opaque blobs. nbaide solves this with three layers:
+
+1. **Formatters** — embed structured JSON in notebook outputs so agents can read them. Humans see exactly what they've always seen.
+2. **CLI** — `nbaide manifest`, `nbaide read`, and `nbaide lint` give agents structured access to any notebook.
+3. **Linter** — score notebooks 0-100 for agent readability and auto-fix common issues.
 
 ## Quick Start
 
@@ -19,19 +23,63 @@ df = pd.read_csv("data.csv")
 df  # humans see the HTML table; agents see structured JSON with schema + stats
 ```
 
-That's it. After `install()`, every DataFrame, matplotlib chart, numpy array, and plotly figure automatically includes structured metadata that agents can read.
+## Lint Your Notebooks
+
+```bash
+$ nbaide lint notebook.ipynb
+
+notebook.ipynb
+
+  cell  1: AIR001 Output size 292KB exceeds 256KB
+  cell  3: AIR003 Error output: ZeroDivisionError
+  cell  5: AIM001 Chart missing title
+  notebook: AIN003 No nbaide.install() call found
+
+  4 issue(s) (1 error, 2 warning, 1 info)
+  Agent readability score: 64/100 (Fair)
+
+$ nbaide lint notebook.ipynb --fix
+
+  Fixed:
+    [AIR001] cell 1: Auto-fixed
+    [AIR003] cell 3: Auto-fixed
+    [AIN003] notebook: Auto-fixed
+
+  cell  5: AIM001 Chart missing title
+
+  1 issue(s) (0 error, 1 warning, 0 info)
+  Agent readability score: 95/100 (Excellent)
+```
+
+### Lint Rules
+
+| Code | Severity | Rule | Auto-fix |
+|------|----------|------|----------|
+| AIR001 | error | Output >256KB | Summarize: keep metadata, strip bloat |
+| AIR002 | warning | Output >100KB | Summarize: keep metadata, strip bloat |
+| AIR003 | warning | Error/traceback output | Strip traceback |
+| AIR004 | info | Stream noise >5KB (progress bars, logging) | Strip stream output |
+| AIR005 | info | Redundant base64 image (nbaide metadata present) | Strip image, keep metadata |
+| AID001 | warning | DataFrame >40 columns | - |
+| AIM001 | warning | Chart missing title | - |
+| AIN001 | info | No markdown headings | Add heading from filename |
+| AIN002 | warning | Code cells not executed | - |
+| AIN003 | info | No nbaide.install() call | Inject install cell |
+
+### CI Integration
+
+```bash
+# Fail CI if agent readability score drops below 80
+nbaide lint notebook.ipynb --check --min 80
+```
 
 ## What Agents See
 
-When an agent reads the notebook, each output includes an `---nbaide---` block with structured JSON:
+When an agent reads a notebook with nbaide installed, each output includes structured JSON:
 
 ```
 ---nbaide---
 {"type": "dataframe", "shape": [200, 9], "columns": [{"name": "price", "dtype": "float64", "nulls": 10, "stats": {"mean": 151.97, "min": 8.58, "max": 299.91}}, ...], "sample_rows": [...]}
-
-     order_id  customer  price ...
-0        1000     Diana  40.04
-...
 ```
 
 For charts, agents get chart type, axis labels, trend detection, and sampled data:
@@ -67,14 +115,11 @@ def format_experiment(exp):
     }
 
 nbaide.register(Experiment, format_experiment)
-# Now any Experiment displayed in a cell is automatically dual-rendered
 ```
 
 Works even after `install()` has been called (late registration).
 
 ## CLI Tools
-
-nbaide includes CLI commands for agents to inspect notebooks without a running kernel:
 
 ```bash
 # Structured summary of an entire notebook
@@ -88,7 +133,12 @@ nbaide read notebook.ipynb --cell 7
 
 # Filter by type
 nbaide read notebook.ipynb --type dataframe
-nbaide read notebook.ipynb --type figure
+
+# Lint for agent readability
+nbaide lint notebook.ipynb
+nbaide lint notebook.ipynb --fix
+nbaide lint notebook.ipynb --check --min 80
+nbaide lint notebook.ipynb --json
 ```
 
 ## Installation
@@ -111,11 +161,13 @@ pip install nbaide[all]
 
 Jupyter stores multiple MIME representations per output. The frontend picks the richest one (HTML, PNG) for display, but `text/plain` is also stored. nbaide embeds structured JSON in `text/plain` — invisible to humans in Jupyter, but readable by any agent that opens the `.ipynb` file.
 
-For types without native HTML (numpy arrays, custom types), nbaide generates `text/html` from `repr()` so Jupyter renders that instead of the raw JSON.
+The linter statically analyzes `.ipynb` files for agent-hostile patterns (oversized outputs, missing metadata, error tracebacks) and can auto-fix most issues without a running kernel.
 
 ## Status
 
-v0.1.0 — Production-quality with 217 tests. Covers the core data science stack:
-- Phase 1 (DataFrames) and Phase 2 (matplotlib, numpy, plotly, plugin system) complete
-- Phase 3 (notebook manifest + CLI) complete
+v0.2.0 — 253 tests. The agent-readability standard for Jupyter notebooks.
+
+- **Formatters**: pandas, matplotlib, numpy, plotly, custom types via plugin system
+- **CLI**: `manifest`, `read`, `lint` with scoring, rules, and auto-fix
+- **Linter**: 10 rules, 0-100 scoring, CI integration via `--check`
 - See [CLAUDE.md](CLAUDE.md) for the full roadmap and technical design
