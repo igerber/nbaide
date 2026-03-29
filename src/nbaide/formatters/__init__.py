@@ -73,6 +73,40 @@ register(
     )
 )
 
+# --- Register numpy (always available — transitive dependency via pandas) ---
+
+import numpy as np  # noqa: E402
+
+from nbaide.formatters._numpy import (  # noqa: E402
+    format_ndarray,
+    render_ndarray_text_plain,
+)
+
+
+def _numpy_mimebundle(arr: np.ndarray, **kwargs) -> dict:
+    return {MIME_TYPE: format_ndarray(arr)}
+
+
+def _numpy_text_plain(arr: np.ndarray, p, cycle) -> None:
+    p.text(render_ndarray_text_plain(arr))
+
+
+def _numpy_display(arr: np.ndarray) -> dict:
+    return {
+        MIME_TYPE: format_ndarray(arr),
+        "text/plain": render_ndarray_text_plain(arr),
+    }
+
+
+register(
+    FormatterEntry(
+        target_type=np.ndarray,
+        mimebundle_func=_numpy_mimebundle,
+        text_plain_func=_numpy_text_plain,
+        display_func=_numpy_display,
+    )
+)
+
 # --- Register matplotlib (optional dependency) ---
 
 try:
