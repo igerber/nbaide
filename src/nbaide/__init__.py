@@ -4,6 +4,7 @@ __version__ = "0.1.0"
 
 from nbaide._install import install, uninstall
 from nbaide._manifest import manifest  # noqa: F401
+from nbaide._read import read_notebook  # noqa: F401
 from nbaide.formatters import MIME_TYPE, get_entry_for_type
 from nbaide.formatters import register_type as register
 from nbaide.formatters._numpy import format_ndarray  # noqa: F401
