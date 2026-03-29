@@ -47,13 +47,24 @@ def register_type(target_type, format_func, text_plain_func=None):
     _tp_func = text_plain_func  # capture for closures below
 
     def mimebundle(obj, **kwargs):
-        return {MIME_TYPE: format_func(obj)}
+        import html
+
+        return {
+            MIME_TYPE: format_func(obj),
+            "text/html": f"<pre>{html.escape(repr(obj))}</pre>",
+        }
 
     def text_plain_ipython(obj, p, cycle):
         p.text(_tp_func(obj))
 
     def display(obj):
-        return {MIME_TYPE: format_func(obj), "text/plain": _tp_func(obj)}
+        import html
+
+        return {
+            MIME_TYPE: format_func(obj),
+            "text/html": f"<pre>{html.escape(repr(obj))}</pre>",
+            "text/plain": _tp_func(obj),
+        }
 
     entry = FormatterEntry(
         target_type=target_type,
