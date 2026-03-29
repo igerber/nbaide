@@ -17,11 +17,11 @@ The key insight: Jupyter's frontend always renders HTML when available, but `tex
 ### The Problem We're Solving
 
 Every major AI coding agent struggles badly with Jupyter notebooks:
-- **Claude Code:** Cell insertion order broken, can't read notebooks >256KB, can't run cells, 94% of tokens wasted on base64 outputs
-- **Cursor:** 149-upvote feature request for notebook support. Common workaround is converting to .py files.
+- **Claude Code:** Cell insertion order broken ([#5197](https://github.com/anthropics/claude-code/issues/5197)), can't read notebooks >256KB ([#16984](https://github.com/anthropics/claude-code/issues/16984)), can't run cells. Notebooks often contain 250K+ characters of base64 images — [up to 94% of content](https://www.alexmolas.com/2025/01/15/ipynb-for-llm.html).
+- **Cursor:** 149-upvote feature request for notebook support ([forum](https://forum.cursor.com/t/jupyter-notebook-support/14851)). Common workaround is converting to .py files.
 - **Copilot:** Cell content disappears after agent edits in .ipynb files ([vscode-jupyter#16834](https://github.com/microsoft/vscode-jupyter/issues/16834))
 - **Gemini Code Assist:** Generates diffs against raw notebook JSON, corrupting the file ([cloud-code-vscode#1180](https://github.com/GoogleCloudPlatform/cloud-code-vscode/issues/1180))
-- **Benchmark data:** LLMs suffer 6-10% code quality drop writing code inside JSON (which .ipynb is)
+- **Benchmark data:** LLMs show degraded code generation when outputting inside JSON constraints — [3-26% depending on model](https://aider.chat/2024/08/14/code-in-json.html) (Aider benchmark)
 
 The universal workaround is "don't use notebooks with agents." nbaide makes notebooks agent-readable instead.
 
