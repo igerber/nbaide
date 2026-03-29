@@ -58,14 +58,16 @@ The "pip install and it works" moment.
 Cover the data science stack. Each new type gets agent visibility for free through the same text/plain channel.
 - **matplotlib** figures (COMPLETE) — chart type detection (line, scatter, bar, histogram, heatmap), axis labels, data ranges, adaptive data sampling (3 tiers), trend detection (direction + slope + R²)
 - **numpy** arrays (COMPLETE) — shape, dtype, global stats, per-column stats for 2D, adaptive data sampling
+- **plotly** figures (COMPLETE) — trace type detection (scatter, bar, histogram, heatmap, pie, box, violin), adaptive data sampling, trend detection for line traces. Mimebundle merges with plotly's native interactive chart output. Works with both `plotly.graph_objects` and `plotly.express`.
 - **Plugin system** (COMPLETE) — `nbaide.register(MyType, format_func)` for custom types. Late registration works (after `install()`). Default text/plain is JSON-only. HTML fallback from `repr()` for types without native HTML.
-- **plotly** figures — extract the structured spec (deferred — lower priority, plotly already stores JSON internally)
 - Formatters package and registry system (COMPLETE) — new types register via `FormatterEntry` in `formatters/__init__.py`
+- Shared utilities in `_safe_json.py`: `compute_trend()`, `adaptive_xy_data()` used by both matplotlib and plotly
 
 **Key learnings:**
 - matplotlib's inline backend calls `select_figure_formats()` which blanket-pops all Figure formatters. Fixed by wrapping that function to re-register ours, plus a `pre_execute` hook as safety net.
+- plotly uses `_repr_mimebundle_()` for interactive charts — our mimebundle handler must merge with (not replace) plotly's native output. Also, `fig.to_dict()` binary-encodes data in plotly express figures; use trace object attributes instead.
 - Types without native HTML/image output (numpy, custom types) need a generated `text/html` from `repr()` so Jupyter doesn't show the raw nbaide JSON to humans. Acceptable trade-off — visually identical.
-- 172 tests total.
+- 200 tests total.
 
 ### Phase 3 — Notebook-level intelligence (IN PROGRESS)
 Move from cell-level to notebook-level understanding.
@@ -76,10 +78,10 @@ Move from cell-level to notebook-level understanding.
 - **Dynamic manifest** — live kernel inspection for variable state, stale cells (deferred)
 
 ### Phase 4 — Agent integration layer (deprioritized)
-The text/plain approach covers most cases without agent-side setup. This phase adds richer integration for edge cases and power users.
-- **MCP server** — expose notebook state as MCP tools (solves the wide-DataFrame truncation problem completely)
+The text/plain approach covers most cases without agent-side setup. 8+ Jupyter MCP servers already exist (Datalayer, cursor-notebook-mcp, etc.) — nbaide's value is orthogonal (content understanding, not notebook structure). Focus on compatibility with existing MCP servers rather than building our own.
+- **MCP server compatibility testing** — validate nbaide outputs are accessible through top MCP servers
 - **CLI `read` command** — `nbaide read notebook.ipynb` extracts all structured data from outputs
-- Integration guides for each major agent
+- **Integration guides** for each major agent + MCP server combination
 
 ### Phase 5 — Ecosystem and standardization
 - **JupyterLab extension** — "agent view" panel
@@ -143,13 +145,15 @@ nbaide/
 │   ├── _pandas.py               # Backward-compat shim (re-exports from formatters._pandas)
 │   └── formatters/
 │       ├── __init__.py          # Registry: FormatterEntry, register(), register_type(), get_entry_for_type()
-│       ├── _pandas.py           # DataFrame formatter (format_dataframe, render_text_plain)
-│       ├── _matplotlib.py       # Figure formatter (format_figure, render_figure_text_plain)
-│       └── _numpy.py            # ndarray formatter (format_ndarray, render_ndarray_text_plain)
+│       ├── _pandas.py           # DataFrame formatter
+│       ├── _matplotlib.py       # matplotlib Figure formatter
+│       ├── _numpy.py            # ndarray formatter
+│       └── _plotly.py           # plotly Figure formatter
 ├── tests/
 │   ├── test_pandas.py           # DataFrame formatting tests
-│   ├── test_matplotlib.py       # Figure formatting tests
+│   ├── test_matplotlib.py       # matplotlib formatting tests
 │   ├── test_numpy.py            # ndarray formatting tests
+│   ├── test_plotly.py           # plotly formatting tests
 │   ├── test_install.py          # IPython integration tests
 │   ├── test_register.py         # Plugin registration tests
 │   └── test_manifest.py         # Manifest parser + CLI tests
