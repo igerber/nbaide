@@ -208,3 +208,31 @@ class TestInstall:
             format_dict, _ = _shell.display_formatter.format(fig)
             assert MIME_TYPE not in format_dict
             plt.close(fig)
+
+    def test_formatters_survive_select_figure_formats(self):
+        """Formatters re-register after matplotlib's inline backend wipes them."""
+        import matplotlib.pyplot as plt
+        from IPython.core.pylabtools import select_figure_formats
+
+        with patch("IPython.get_ipython", return_value=_shell):
+            from nbaide._install import _ensure_formatters, install
+
+            install()
+
+            # Simulate what the inline backend does — wipe all Figure formatters
+            select_figure_formats(_shell, {"png"})
+
+            # Our formatters were wiped
+            tp = _shell.display_formatter.formatters["text/plain"]
+            assert matplotlib.figure.Figure not in tp.type_printers
+
+            # pre_execute hook detects the wipe and re-registers
+            _ensure_formatters()
+
+            # Now they should be back
+            fig, ax = plt.subplots()
+            ax.plot([1, 2, 3], [1, 2, 3])
+            format_dict, _ = _shell.display_formatter.format(fig)
+            assert MIME_TYPE in format_dict
+            assert "---nbaide---" in format_dict.get("text/plain", "")
+            plt.close(fig)
