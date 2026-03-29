@@ -1,5 +1,10 @@
 # nbaide
 
+[![PyPI](https://img.shields.io/pypi/v/nbaide)](https://pypi.org/project/nbaide/)
+[![Tests](https://github.com/igerber/nbaide/actions/workflows/test.yml/badge.svg)](https://github.com/igerber/nbaide/actions/workflows/test.yml)
+[![Python](https://img.shields.io/pypi/pyversions/nbaide)](https://pypi.org/project/nbaide/)
+[![License](https://img.shields.io/github/license/igerber/nbaide)](LICENSE)
+
 The agent-readability standard for Jupyter notebooks. Ruff makes your code clean — nbaide makes your notebooks intelligent.
 
 AI coding agents (Claude Code, Cursor, Codex) struggle with Jupyter notebooks because outputs are stored as HTML tables, base64 images, and opaque blobs. nbaide solves this with three layers:
