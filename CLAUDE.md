@@ -9,7 +9,7 @@ A Python library that uses Jupyter's existing multi-MIME-type display system (`_
 - **For humans:** Rich HTML tables, charts, styled visuals (rendered in JupyterLab as usual)
 - **For agents:** Structured JSON with schemas, statistics, data samples, and semantic metadata (stored in the `.ipynb` file, readable by Claude Code, Cursor, Codex, etc.)
 
-The key insight: Jupyter already supports multiple MIME representations per output. The frontend picks the richest one for display, but ALL representations are stored in the `.ipynb` file. We add a structured `application/vnd.nbaide+json` representation alongside the standard visual ones.
+The key insight: Jupyter's frontend always renders HTML when available, but `text/plain` is what agents see when reading `.ipynb` files. We embed structured JSON in `text/plain` (before the pandas repr) so agents get it through the channel they already consume — no special tooling needed. We also store it in a custom `application/vnd.nbaide+json` MIME type for future tooling.
 
 ## Strategic Context
 
@@ -40,23 +40,29 @@ The universal workaround is "don't use notebooks with agents." nbaide makes note
 
 ## Phased Roadmap
 
-### Phase 1 — Core dual rendering (current phase)
+### Phase 1 — Core dual rendering (COMPLETE)
 The "pip install and it works" moment.
-- Dual MIME-type output for **pandas DataFrames** (structured JSON + rich HTML)
-- IPython formatter auto-registration — `import nbaide` or `nbaide.install()` is all you need
-- Structured schema: column types, nulls, basic stats, sample rows, shape
-- Custom MIME type: `application/vnd.nbaide+json`
-- Works immediately in existing `.ipynb` files read by Claude Code / Cursor / Codex
-- **Exit criteria:** an agent reading a notebook with nbaide outputs can understand the data without executing code
+- Dual output for **pandas DataFrames** (structured JSON in `text/plain` + `application/vnd.nbaide+json`, rich HTML untouched)
+- IPython formatter auto-registration — `nbaide.install()` is all you need
+- Structured schema: column types, nulls, nested stats by dtype kind, sample rows, shape
+- Adaptive text/plain: JSON first (survives truncation), pandas repr included for narrow DataFrames, omitted for wide (>40 cols)
+- 75 tests covering all dtype kinds, edge cases, IPython integration
+- **Validated:** agents reading notebooks via standard tooling (Read tool) see the structured JSON without any special setup
 
-### Phase 2 — Expand data types
-Cover the data science stack.
+**Key learnings:**
+- Custom MIME types (`application/vnd.nbaide+json`) are stored in .ipynb but invisible to agents through standard notebook reading. The text/plain channel is what agents actually consume.
+- JSON-first ordering in text/plain ensures structured data survives when agent tooling truncates large outputs.
+- For very wide DataFrames (>40 cols), the HTML table alone can exceed agent tooling limits. An MCP server would solve this completely but isn't needed for typical DataFrames.
+
+### Phase 2 — Expand data types (next)
+Cover the data science stack. Each new type gets agent visibility for free through the same text/plain channel.
 - **matplotlib** figures — semantic metadata (axis labels, data ranges, chart type, trend direction)
-- **plotly** figures — extract the structured spec from the Vega-Lite JSON
+- **plotly** figures — extract the structured spec
 - **numpy** arrays — shape, dtype, stats, sample slices
 - **scikit-learn** models — model type, params, metrics, feature importances
 - **PIL/images** — dimensions, mode, histogram summary
 - Plugin system so users can register formatters for their own types
+- Introduce `formatters/` package and registry when adding the second type
 
 ### Phase 3 — Notebook-level intelligence
 Move from cell-level to notebook-level understanding.
@@ -65,11 +71,10 @@ Move from cell-level to notebook-level understanding.
 - **Variable dependency graph** — which cells produced which variables, what's stale
 - **Auto-profiling mode** — IPython extension that wraps all display calls automatically
 
-### Phase 4 — Agent integration layer
-Meet agents where they are.
-- **MCP server** — expose notebook state as MCP tools
-- **CLI tool** — `nbaide query notebook.ipynb "what columns does df have?"`
-- **Claude Code integration** — custom slash command or tooling guidance
+### Phase 4 — Agent integration layer (deprioritized)
+The text/plain approach covers most cases without agent-side setup. This phase adds richer integration for edge cases and power users.
+- **MCP server** — expose notebook state as MCP tools (solves the wide-DataFrame truncation problem completely)
+- **CLI tool** — `nbaide read notebook.ipynb` extracts all structured data
 - Integration guides for each major agent
 
 ### Phase 5 — Ecosystem and standardization
@@ -83,59 +88,68 @@ Meet agents where they are.
 ### MIME Type Convention
 Use `application/vnd.nbaide+json` as our custom MIME type. This follows the vendor MIME type convention (`vnd.*`) that Jupyter supports. The JSON payload varies by data type but always includes a `type` field.
 
-### DataFrame JSON Schema (Phase 1)
+### DataFrame JSON Schema
 ```json
 {
   "type": "dataframe",
   "shape": [rows, cols],
+  "memory_usage_bytes": 12345,
   "columns": [
     {
       "name": "col_name",
       "dtype": "int64",
       "nulls": 12,
-      "null_pct": 0.01,
-      "mean": 34.2,
-      "std": 11.4,
-      "min": 18,
-      "max": 89,
-      "unique": 72
+      "stats": {
+        "mean": 34.2,
+        "std": 11.4,
+        "min": 18,
+        "max": 89,
+        "unique": 72
+      }
     }
   ],
   "sample_rows": [...],
-  "memory_usage_bytes": 12345
+  "columns_truncated_from": 100,
+  "index": {"name": "id", "dtype": "int64"}
 }
 ```
+
+Stats vary by dtype: numeric (mean/std/min/max/unique), boolean (true_count/true_pct), datetime (min/max/unique as ISO strings), object (unique/top/top_freq), categorical (unique/top/top_freq/categories).
+
+Optional fields: `columns_truncated_from` (only if >40 cols), `index` (only if non-default), `has_duplicate_columns` (only if true).
 
 ### Key Design Decisions
 - **External wrapping, not method injection:** We register IPython formatters for types we don't own. No monkeypatching `_repr_mimebundle_` onto pandas.
 - **JSON, not markdown:** repr_llm used markdown. We use structured JSON so agents can programmatically query fields, not parse text.
-- **Stored in the .ipynb:** The structured output lives in the cell output's MIME bundle in the notebook file. No sidecar files, no separate API needed.
-- **Token-conscious:** Include sample rows (not full data), summary stats, schema. The representation should be useful at ~500-2000 tokens per output.
+- **text/plain is the agent channel:** Custom MIME types are invisible to agents through standard tooling. We embed JSON in `text/plain` (before the pandas repr) because that's what agents actually read. HTML is untouched for humans.
+- **JSON-first ordering:** Structured data comes before the pandas repr in text/plain so it survives truncation by agent tooling.
+- **Adaptive repr:** Wide DataFrames (>40 cols) omit the pandas repr from text/plain entirely, keeping output compact.
+- **Token-conscious:** Include sample rows (not full data), summary stats, schema. Typical output is ~300-600 tokens. Wide DataFrames up to ~2700 tokens.
 
 ## Project Structure
 
 ```
 nbaide/
 ├── src/nbaide/
-│   ├── __init__.py          # Public API: install(), show(), version
-│   ├── formatters/          # MIME formatters by data type
-│   │   ├── __init__.py
-│   │   ├── pandas.py        # DataFrame/Series formatter
-│   │   ├── matplotlib.py    # Figure formatter (Phase 2)
-│   │   └── ...
-│   ├── registry.py          # Formatter registration system
-│   ├── display.py           # Display objects with _repr_mimebundle_()
-│   └── install.py           # IPython integration (auto-registration)
+│   ├── __init__.py          # Public API: install(), uninstall(), show(), format_dataframe()
+│   ├── _pandas.py           # DataFrame formatting logic (no IPython dependency)
+│   └── _install.py          # IPython formatter registration
 ├── tests/
-├── examples/                # Example notebooks
+│   ├── test_pandas.py       # Core formatting tests (57 tests)
+│   └── test_install.py      # IPython integration tests (11 tests)
 ├── pyproject.toml
 ├── README.md
 └── CLAUDE.md
 ```
 
+When Phase 2 adds more types, introduce a `formatters/` package and registry.
+
 ## Development
 
 ```bash
+# Requires Python >=3.10. A venv with Python 3.13 exists at .venv/
+source .venv/bin/activate
+
 # Install in dev mode
 pip install -e ".[dev]"
 
@@ -144,4 +158,7 @@ pytest
 
 # Lint
 ruff check src/ tests/
+
+# Execute test notebook (ipykernel "nbaide-dev" is registered)
+jupyter nbconvert --to notebook --execute --inplace --ExecutePreprocessor.kernel_name=nbaide-dev test_nbaide.ipynb
 ```
