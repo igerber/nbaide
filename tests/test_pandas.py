@@ -487,3 +487,36 @@ class TestRenderTextPlain:
         json_line = after.split("\n", 1)[0]
         payload = json.loads(json_line)
         assert payload["shape"] == [0, 0]
+
+    def test_wide_dataframe_omits_repr(self):
+        data = {f"col_{i}": [i] for i in range(80)}
+        df = pd.DataFrame(data)
+        text = render_text_plain(df)
+        assert "---nbaide---" in text
+        # JSON is present and parseable
+        _, after = text.split("---nbaide---\n", 1)
+        json_line = after.split("\n", 1)[0]
+        payload = json.loads(json_line)
+        assert payload["shape"] == [1, 80]
+        # Only 2 lines: delimiter + JSON (no repr follows)
+        lines = text.strip().split("\n")
+        assert len(lines) == 2
+
+    def test_narrow_dataframe_includes_repr(self):
+        df = pd.DataFrame({"a": [1], "b": [2]})
+        text = render_text_plain(df)
+        assert "---nbaide---" in text
+        assert "a" in text
+        assert "b" in text
+
+    def test_threshold_boundary(self):
+        # Exactly MAX_COLUMNS (40) — should include repr
+        data_at = {f"c{i}": [i] for i in range(40)}
+        text_at = render_text_plain(pd.DataFrame(data_at))
+        assert "c0" in text_at.split("---nbaide---\n", 1)[1].split("\n", 1)[-1]
+
+        # One over — should omit repr
+        data_over = {f"c{i}": [i] for i in range(41)}
+        text_over = render_text_plain(pd.DataFrame(data_over))
+        lines_after_json = text_over.split("---nbaide---\n", 1)[1].split("\n")
+        assert len(lines_after_json) == 1  # just the JSON line, no repr

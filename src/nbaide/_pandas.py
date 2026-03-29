@@ -274,7 +274,9 @@ def render_text_plain(df: pd.DataFrame) -> str:
     the Read tool clips large outputs). The pandas table follows for humans.
     In Jupyter, humans never see text/plain (HTML takes priority).
     """
-    parts = ["---nbaide---", json.dumps(format_dataframe(df)), "", repr(df)]
+    parts = ["---nbaide---", json.dumps(format_dataframe(df))]
+    if df.shape[1] <= MAX_COLUMNS:
+        parts += ["", repr(df)]
     return "\n".join(parts)
 
 
