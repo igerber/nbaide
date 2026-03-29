@@ -19,8 +19,8 @@ The key insight: Jupyter's frontend always renders HTML when available, but `tex
 Every major AI coding agent struggles badly with Jupyter notebooks:
 - **Claude Code:** Cell insertion order broken, can't read notebooks >256KB, can't run cells, 94% of tokens wasted on base64 outputs
 - **Cursor:** 149-upvote feature request for notebook support. Common workaround is converting to .py files.
-- **Codex:** Corrupts notebook format. Workaround is "convert to .py first"
-- **Copilot:** Edited cells render as blank blocks
+- **Copilot:** Cell content disappears after agent edits in .ipynb files ([vscode-jupyter#16834](https://github.com/microsoft/vscode-jupyter/issues/16834))
+- **Gemini Code Assist:** Generates diffs against raw notebook JSON, corrupting the file ([cloud-code-vscode#1180](https://github.com/GoogleCloudPlatform/cloud-code-vscode/issues/1180))
 - **Benchmark data:** LLMs suffer 6-10% code quality drop writing code inside JSON (which .ipynb is)
 
 The universal workaround is "don't use notebooks with agents." nbaide makes notebooks agent-readable instead.
