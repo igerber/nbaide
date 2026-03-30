@@ -23,8 +23,8 @@ OUTPUT_SIZE_WARNING = 100 * 1024  # 100KB
 WIDE_DATAFRAME_THRESHOLD = 40
 
 # Thresholds — notebook level
-TOTAL_OUTPUT_ERROR = 1024 * 1024  # 1MB
-TOTAL_OUTPUT_WARNING = 500 * 1024  # 500KB
+RENDERED_CHARS_ERROR = 100_000  # 100K chars — definitely unreadable
+RENDERED_CHARS_WARNING = 50_000  # 50K chars — likely problematic
 BASE64_BLOAT_ERROR = 500 * 1024  # 500KB
 BASE64_BLOAT_WARNING = 200 * 1024  # 200KB
 IMAGE_MIME_TYPES = {"image/png", "image/jpeg", "image/svg+xml"}
@@ -259,29 +259,52 @@ def _cell_output_size(cell: dict) -> int:
     return total
 
 
+def _rendered_char_count(cells: list) -> int:
+    """Estimate the total rendered character count agents process."""
+    total = 0
+    for cell in cells:
+        total += len("".join(cell.get("source", [])))
+        if cell.get("cell_type") != "code":
+            continue
+        for output in cell.get("outputs", []):
+            data = output.get("data", {})
+            for mime, content in data.items():
+                if mime.startswith("text/"):
+                    if isinstance(content, str):
+                        total += len(content)
+                    elif isinstance(content, list):
+                        total += sum(len(s) for s in content if isinstance(s, str))
+            text = output.get("text", "")
+            if isinstance(text, list):
+                total += sum(len(s) for s in text)
+            elif isinstance(text, str):
+                total += len(text)
+    return total
+
+
 def _check_total_output_size(cells: list) -> list[LintIssue]:
-    """AIR006: Flag when total output across all cells is too large."""
-    total = sum(_cell_output_size(c) for c in cells if c.get("cell_type") == "code")
-    if total > TOTAL_OUTPUT_ERROR:
+    """AIR006: Flag when total rendered content is too large for agents."""
+    total = _rendered_char_count(cells)
+    if total > RENDERED_CHARS_ERROR:
         return [
             LintIssue(
                 rule="AIR006",
                 cell=None,
                 severity="error",
-                message=f"Total output {total // 1024}KB exceeds 1MB",
+                message=f"Total rendered content {total // 1000}K chars — agents cannot read this",
                 fixable=True,
-                suggestion="Will strip base64 images and summarize large outputs",
+                suggestion="Will summarize large outputs to reduce content size",
             )
         ]
-    if total > TOTAL_OUTPUT_WARNING:
+    if total > RENDERED_CHARS_WARNING:
         return [
             LintIssue(
                 rule="AIR006",
                 cell=None,
                 severity="warning",
-                message=f"Total output {total // 1024}KB exceeds 500KB",
+                message=f"Total rendered content {total // 1000}K chars — may exceed agent limits",
                 fixable=True,
-                suggestion="Will strip base64 images and summarize large outputs",
+                suggestion="Will summarize large outputs to reduce content size",
             )
         ]
     return []
@@ -568,27 +591,19 @@ def _apply_fixes(
                         del data[mime]
         fixed.append(("AIR007", None))
 
-    # AIR006: Summarize largest outputs until total drops below threshold
+    # AIR006: Summarize largest text outputs until rendered chars drop
     if "AIR006" in notebook_rules:
-        # After image stripping (AIR007), check if still over
-        total = sum(
-            _cell_output_size(c) for c in cells if c.get("cell_type") == "code"
-        )
-        if total > TOTAL_OUTPUT_WARNING:
-            # Summarize cells from largest to smallest
+        total = _rendered_char_count(cells)
+        if total > RENDERED_CHARS_WARNING:
             sized = [
                 (i, _cell_output_size(c))
                 for i, c in enumerate(cells)
-                if c.get("cell_type") == "code" and _cell_output_size(c) > 10000
+                if c.get("cell_type") == "code" and _cell_output_size(c) > 5000
             ]
             for idx, _ in sorted(sized, key=lambda x: x[1], reverse=True):
                 _fix_oversized_output(cells[idx])
-                total = sum(
-                    _cell_output_size(c)
-                    for c in cells
-                    if c.get("cell_type") == "code"
-                )
-                if total <= TOTAL_OUTPUT_WARNING:
+                total = _rendered_char_count(cells)
+                if total <= RENDERED_CHARS_WARNING:
                     break
         fixed.append(("AIR006", None))
 
