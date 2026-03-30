@@ -71,6 +71,20 @@ $ nbaide lint notebook.ipynb --fix
 | AIN002 | warning | Code cells not executed | - |
 | AIN003 | info | No nbaide.install() call | Inject install cell |
 
+### Pre-commit Hook
+
+```yaml
+# .pre-commit-config.yaml
+repos:
+  - repo: https://github.com/igerber/nbaide
+    rev: v0.2.0
+    hooks:
+      - id: nbaide-lint
+        args: [--check, --min, "70"]
+```
+
+Blocks commits if any `.ipynb` file scores below the threshold.
+
 ### CI Integration
 
 ```bash
