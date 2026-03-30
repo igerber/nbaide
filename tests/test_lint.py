@@ -187,6 +187,89 @@ class TestRedundantImageRules:
         assert all(i.rule != "AIR005" for i in result.issues)
 
 
+class TestTotalOutputRules:
+    def test_air006_total_over_1mb(self):
+        # 5 cells × 250KB each = 1.25MB total
+        cells = [_md_cell("# Test"), _code_cell("nbaide.install()")]
+        cells += [_code_cell("x", outputs=[_big_output(250_000)]) for _ in range(5)]
+        nb = _make_notebook(cells)
+        path = _write_nb(nb)
+        result = lint(path)
+        rules = [i.rule for i in result.issues]
+        assert "AIR006" in rules
+        assert any(i.severity == "error" for i in result.issues if i.rule == "AIR006")
+
+    def test_air006_total_over_500kb(self):
+        cells = [_md_cell("# Test"), _code_cell("nbaide.install()")]
+        cells += [_code_cell("x", outputs=[_big_output(80_000)]) for _ in range(8)]
+        nb = _make_notebook(cells)
+        path = _write_nb(nb)
+        result = lint(path)
+        rules = [i.rule for i in result.issues]
+        assert "AIR006" in rules
+
+    def test_air006_small_notebook_passes(self):
+        nb = _make_notebook([
+            _md_cell("# Test"),
+            _code_cell("nbaide.install()\nx", outputs=[_big_output(1000)]),
+        ])
+        path = _write_nb(nb)
+        result = lint(path)
+        assert all(i.rule != "AIR006" for i in result.issues)
+
+
+class TestBase64BloatRules:
+    def _image_cell(self, png_size):
+        return _code_cell("fig", outputs=[{
+            "output_type": "display_data",
+            "data": {"image/png": "x" * png_size},
+        }])
+
+    def test_air007_over_500kb(self):
+        cells = [_md_cell("# Test"), _code_cell("nbaide.install()")]
+        cells += [self._image_cell(120_000) for _ in range(5)]  # 600KB total
+        nb = _make_notebook(cells)
+        path = _write_nb(nb)
+        result = lint(path)
+        rules = [i.rule for i in result.issues]
+        assert "AIR007" in rules
+        assert any(i.severity == "error" for i in result.issues if i.rule == "AIR007")
+
+    def test_air007_over_200kb(self):
+        cells = [_md_cell("# Test"), _code_cell("nbaide.install()")]
+        cells += [self._image_cell(50_000) for _ in range(5)]  # 250KB total
+        nb = _make_notebook(cells)
+        path = _write_nb(nb)
+        result = lint(path)
+        rules = [i.rule for i in result.issues]
+        assert "AIR007" in rules
+
+    def test_air007_no_images_passes(self):
+        nb = _make_notebook([
+            _md_cell("# Test"),
+            _code_cell("nbaide.install()\nx = 1"),
+        ])
+        path = _write_nb(nb)
+        result = lint(path)
+        assert all(i.rule != "AIR007" for i in result.issues)
+
+    def test_fix_strips_all_images(self):
+        cells = [_md_cell("# Test"), _code_cell("nbaide.install()")]
+        cells += [self._image_cell(120_000) for _ in range(5)]
+        nb = _make_notebook(cells)
+        path = _write_nb(nb)
+        result = lint(path, fix=True)
+        fixed_rules = [r for r, c in result.fixed]
+        assert "AIR007" in fixed_rules
+
+        # Verify no images remain
+        with open(path) as f:
+            fixed_nb = json.load(f)
+        for cell in fixed_nb["cells"]:
+            for output in cell.get("outputs", []):
+                assert "image/png" not in output.get("data", {})
+
+
 class TestDataStructureRules:
     def test_aid001_wide_dataframe(self):
         payload = {"type": "dataframe", "shape": [100, 80], "columns": []}

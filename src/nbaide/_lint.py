@@ -17,10 +17,17 @@ MIME_TYPE = "application/vnd.nbaide+json"
 _HEADING_RE = re.compile(r"^#{1,6}\s+.+$", re.MULTILINE)
 _INSTALL_RE = re.compile(r"nbaide\.install\(\)")
 
-# Thresholds
+# Thresholds — per cell
 OUTPUT_SIZE_ERROR = 256 * 1024  # 256KB
 OUTPUT_SIZE_WARNING = 100 * 1024  # 100KB
 WIDE_DATAFRAME_THRESHOLD = 40
+
+# Thresholds — notebook level
+TOTAL_OUTPUT_ERROR = 1024 * 1024  # 1MB
+TOTAL_OUTPUT_WARNING = 500 * 1024  # 500KB
+BASE64_BLOAT_ERROR = 500 * 1024  # 500KB
+BASE64_BLOAT_WARNING = 200 * 1024  # 200KB
+IMAGE_MIME_TYPES = {"image/png", "image/jpeg", "image/svg+xml"}
 
 # Scoring weights
 SEVERITY_WEIGHTS = {"error": 15, "warning": 5, "info": 1}
@@ -83,7 +90,7 @@ def lint(path: str | Path, fix: bool = False) -> LintResult:
     cells = nb.get("cells", [])
     issues: list[LintIssue] = []
 
-    # Run all checks
+    # Run all checks — per-cell
     issues.extend(_check_output_sizes(cells))
     issues.extend(_check_error_outputs(cells))
     issues.extend(_check_stream_noise(cells))
@@ -91,6 +98,9 @@ def lint(path: str | Path, fix: bool = False) -> LintResult:
     issues.extend(_check_data_structures(cells))
     issues.extend(_check_visualizations(cells))
     issues.extend(_check_notebook_structure(cells))
+    # Notebook-level checks
+    issues.extend(_check_total_output_size(cells))
+    issues.extend(_check_base64_bloat(cells))
 
     # Apply fixes if requested
     fixed = []
@@ -247,6 +257,81 @@ def _cell_output_size(cell: dict) -> int:
         elif isinstance(text, str):
             total += len(text)
     return total
+
+
+def _check_total_output_size(cells: list) -> list[LintIssue]:
+    """AIR006: Flag when total output across all cells is too large."""
+    total = sum(_cell_output_size(c) for c in cells if c.get("cell_type") == "code")
+    if total > TOTAL_OUTPUT_ERROR:
+        return [
+            LintIssue(
+                rule="AIR006",
+                cell=None,
+                severity="error",
+                message=f"Total output {total // 1024}KB exceeds 1MB",
+                fixable=True,
+                suggestion="Will strip base64 images and summarize large outputs",
+            )
+        ]
+    if total > TOTAL_OUTPUT_WARNING:
+        return [
+            LintIssue(
+                rule="AIR006",
+                cell=None,
+                severity="warning",
+                message=f"Total output {total // 1024}KB exceeds 500KB",
+                fixable=True,
+                suggestion="Will strip base64 images and summarize large outputs",
+            )
+        ]
+    return []
+
+
+def _check_base64_bloat(cells: list) -> list[LintIssue]:
+    """AIR007: Flag total base64 image bloat across notebook."""
+    total_images = 0
+    for cell in cells:
+        if cell.get("cell_type") != "code":
+            continue
+        for output in cell.get("outputs", []):
+            data = output.get("data", {})
+            for mime, content in data.items():
+                if mime in IMAGE_MIME_TYPES:
+                    if isinstance(content, str):
+                        total_images += len(content)
+                    elif isinstance(content, list):
+                        total_images += sum(
+                            len(s) for s in content if isinstance(s, str)
+                        )
+    if total_images > BASE64_BLOAT_ERROR:
+        return [
+            LintIssue(
+                rule="AIR007",
+                cell=None,
+                severity="error",
+                message=(
+                    f"Total base64 images {total_images // 1024}KB"
+                    " — invisible to agents"
+                ),
+                fixable=True,
+                suggestion="Will strip base64 images (keep nbaide metadata if present)",
+            )
+        ]
+    if total_images > BASE64_BLOAT_WARNING:
+        return [
+            LintIssue(
+                rule="AIR007",
+                cell=None,
+                severity="warning",
+                message=(
+                    f"Total base64 images {total_images // 1024}KB"
+                    " — invisible to agents"
+                ),
+                fixable=True,
+                suggestion="Will strip base64 images (keep nbaide metadata if present)",
+            )
+        ]
+    return []
 
 
 def _check_data_structures(cells: list) -> list[LintIssue]:
@@ -472,6 +557,40 @@ def _apply_fixes(
         }
         cells.insert(0, heading_cell)
         fixed.append(("AIN001", None))
+
+    # AIR007: Strip all base64 images across notebook
+    if "AIR007" in notebook_rules:
+        for cell in cells:
+            for output in cell.get("outputs", []):
+                data = output.get("data", {})
+                for mime in list(data.keys()):
+                    if mime in IMAGE_MIME_TYPES:
+                        del data[mime]
+        fixed.append(("AIR007", None))
+
+    # AIR006: Summarize largest outputs until total drops below threshold
+    if "AIR006" in notebook_rules:
+        # After image stripping (AIR007), check if still over
+        total = sum(
+            _cell_output_size(c) for c in cells if c.get("cell_type") == "code"
+        )
+        if total > TOTAL_OUTPUT_WARNING:
+            # Summarize cells from largest to smallest
+            sized = [
+                (i, _cell_output_size(c))
+                for i, c in enumerate(cells)
+                if c.get("cell_type") == "code" and _cell_output_size(c) > 10000
+            ]
+            for idx, _ in sorted(sized, key=lambda x: x[1], reverse=True):
+                _fix_oversized_output(cells[idx])
+                total = sum(
+                    _cell_output_size(c)
+                    for c in cells
+                    if c.get("cell_type") == "code"
+                )
+                if total <= TOTAL_OUTPUT_WARNING:
+                    break
+        fixed.append(("AIR006", None))
 
     # Write back
     if fixed:
