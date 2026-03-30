@@ -623,5 +623,6 @@ class TestRealNotebook:
         if not TEST_NOTEBOOK.exists():
             pytest.skip("test_nbaide.ipynb not found")
         result = lint(TEST_NOTEBOOK)
-        assert result.score >= 80
-        assert result.rating in ("Excellent", "Good")
+        # Our test notebook is large (~97K rendered chars), so score is capped
+        assert result.score <= 50  # capped due to size
+        assert result.rating in ("Poor", "Fair")

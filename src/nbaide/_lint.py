@@ -111,7 +111,7 @@ def lint(path: str | Path, fix: bool = False) -> LintResult:
         issues = [i for i in issues if (i.rule, i.cell) not in fixed_set]
 
     # Compute score
-    score, rating = _compute_score(issues)
+    score, rating = _compute_score(issues, cells)
 
     return LintResult(
         path=str(path),
@@ -495,10 +495,22 @@ def _check_notebook_structure(cells: list) -> list[LintIssue]:
 # ---------------------------------------------------------------------------
 
 
-def _compute_score(issues: list[LintIssue]) -> tuple[int, str]:
-    """Compute the agent readability score and rating."""
+def _compute_score(issues: list[LintIssue], cells: list) -> tuple[int, str]:
+    """Compute the agent readability score and rating.
+
+    Applies a score cap based on total rendered content: if the notebook
+    is too large for agents to read at all, the score can't be high
+    regardless of per-issue deductions.
+    """
     deductions = sum(SEVERITY_WEIGHTS.get(i.severity, 0) for i in issues)
     score = max(0, 100 - deductions)
+
+    # Score cap: unreadable notebooks can't score well
+    rendered = _rendered_char_count(cells)
+    if rendered > 100_000:
+        score = min(score, 30)
+    elif rendered > 50_000:
+        score = min(score, 50)
 
     rating = "Critical"
     for threshold, label in RATING_TIERS:
