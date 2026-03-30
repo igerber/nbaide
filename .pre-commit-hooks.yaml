@@ -1,0 +1,7 @@
+- id: nbaide-lint
+  name: nbaide-lint
+  description: Lint Jupyter notebooks for AI agent readability
+  entry: nbaide lint --check
+  language: python
+  types: [jupyter]
+  additional_dependencies: []
