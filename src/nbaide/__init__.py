@@ -2,6 +2,7 @@
 
 __version__ = "0.2.0"
 
+from nbaide._convert import convert  # noqa: F401
 from nbaide._install import install, uninstall
 from nbaide._lint import lint  # noqa: F401
 from nbaide._manifest import manifest  # noqa: F401
@@ -48,6 +49,7 @@ __all__ = [
     "manifest",
     "read_notebook",
     "lint",
+    "convert",
     "MIME_TYPE",
     "__version__",
 ]

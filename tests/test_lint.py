@@ -188,10 +188,17 @@ class TestRedundantImageRules:
 
 
 class TestTotalOutputRules:
-    def test_air006_total_over_1mb(self):
-        # 5 cells × 250KB each = 1.25MB total
+    def _text_output(self, chars):
+        """Create a text/plain output of a given character count."""
+        return {
+            "output_type": "execute_result",
+            "data": {"text/plain": "x" * chars},
+        }
+
+    def test_air006_over_100k_chars(self):
+        # Many cells with text outputs summing to >100K rendered chars
         cells = [_md_cell("# Test"), _code_cell("nbaide.install()")]
-        cells += [_code_cell("x", outputs=[_big_output(250_000)]) for _ in range(5)]
+        cells += [_code_cell("x", outputs=[self._text_output(12_000)]) for _ in range(10)]
         nb = _make_notebook(cells)
         path = _write_nb(nb)
         result = lint(path)
@@ -199,9 +206,9 @@ class TestTotalOutputRules:
         assert "AIR006" in rules
         assert any(i.severity == "error" for i in result.issues if i.rule == "AIR006")
 
-    def test_air006_total_over_500kb(self):
+    def test_air006_over_50k_chars(self):
         cells = [_md_cell("# Test"), _code_cell("nbaide.install()")]
-        cells += [_code_cell("x", outputs=[_big_output(80_000)]) for _ in range(8)]
+        cells += [_code_cell("x", outputs=[self._text_output(7_000)]) for _ in range(8)]
         nb = _make_notebook(cells)
         path = _write_nb(nb)
         result = lint(path)
@@ -211,7 +218,7 @@ class TestTotalOutputRules:
     def test_air006_small_notebook_passes(self):
         nb = _make_notebook([
             _md_cell("# Test"),
-            _code_cell("nbaide.install()\nx", outputs=[_big_output(1000)]),
+            _code_cell("nbaide.install()\nx", outputs=[self._text_output(1000)]),
         ])
         path = _write_nb(nb)
         result = lint(path)
@@ -616,5 +623,6 @@ class TestRealNotebook:
         if not TEST_NOTEBOOK.exists():
             pytest.skip("test_nbaide.ipynb not found")
         result = lint(TEST_NOTEBOOK)
-        assert result.score >= 80
-        assert result.rating in ("Excellent", "Good")
+        # Our test notebook is large (~97K rendered chars), so score is capped
+        assert result.score <= 50  # capped due to size
+        assert result.rating in ("Poor", "Fair")
