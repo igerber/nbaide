@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "nbaide"
-version = "0.2.0"
+version = "0.3.0"
 description = "Dual-rendering for Jupyter notebook outputs — rich visuals for humans, structured data for AI agents"
 readme = "README.md"
 license = "MIT"
