@@ -289,7 +289,7 @@ def _render_fallback(data: dict) -> str:
     if "image/png" in data or "image/svg+xml" in data:
         if tp:
             return (
-                f"**Output:**\n```\n{_truncate(tp, 500)}\n```\n\n"
+                f"**Output:**\n```\n{_truncate(tp, 3000)}\n```\n\n"
                 "*[Figure: image output — no metadata available]*"
             )
         return "*[Figure: image output — no metadata available]*"
@@ -301,7 +301,7 @@ def _render_fallback(data: dict) -> str:
         return "*[Table output — install nbaide for structured metadata]*"
 
     if tp:
-        return f"**Output:**\n```\n{_truncate(tp, 1000)}\n```"
+        return f"**Output:**\n```\n{_truncate(tp, 5000)}\n```"
 
     return ""
 
@@ -313,7 +313,7 @@ def _render_stream(output: dict) -> str:
         text = "".join(text)
     if not text.strip():
         return ""
-    return f"```\n{_truncate(text, 500)}\n```"
+    return f"```\n{_truncate(text, 2000)}\n```"
 
 
 def _render_error(output: dict) -> str:
