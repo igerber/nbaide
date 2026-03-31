@@ -62,10 +62,25 @@ def main():
         "--json", dest="json_output", action="store_true", help="Output as JSON."
     )
 
+    # nbaide convert <path> [-o OUTPUT] [--stdout]
+    convert_parser = subparsers.add_parser(
+        "convert",
+        help="Convert a notebook to agent-optimized markdown.",
+    )
+    convert_parser.add_argument("path", help="Path to the .ipynb file.")
+    convert_parser.add_argument(
+        "-o", "--output", default=None, help="Output file path."
+    )
+    convert_parser.add_argument(
+        "--stdout", action="store_true", help="Print markdown to stdout."
+    )
+
     args = parser.parse_args()
 
     if args.command == "manifest":
         _cmd_manifest(args.path)
+    elif args.command == "convert":
+        _cmd_convert(args.path, output=args.output, to_stdout=args.stdout)
     elif args.command == "read":
         _cmd_read(args.path, cell=args.cell, data_type=args.data_type)
     elif args.command == "lint":
@@ -117,6 +132,30 @@ def _cmd_read(path: str, cell: int | None = None, data_type: str | None = None):
         print("null")
     else:
         print(json.dumps(result, indent=2))
+
+
+def _cmd_convert(path: str, output: str | None = None, to_stdout: bool = False):
+    """Run the convert command."""
+    from nbaide._convert import convert
+
+    try:
+        if to_stdout:
+            md = convert(path)
+            print(md)
+        elif output:
+            convert(path, output=output)
+        else:
+            from pathlib import Path
+
+            out_path = Path(path).with_suffix(".md")
+            convert(path, output=out_path)
+            print(f"Converted to {out_path}")
+    except FileNotFoundError:
+        print(f"Error: file not found: {path}", file=sys.stderr)
+        sys.exit(1)
+    except json.JSONDecodeError:
+        print(f"Error: not a valid notebook: {path}", file=sys.stderr)
+        sys.exit(1)
 
 
 def _cmd_lint(
